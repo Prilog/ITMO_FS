@@ -1,5 +1,5 @@
 import numpy as np
-import sklearn as sl
+from .measures import GLOB_MEASURE
 from scipy.sparse import csgraph
 
 
@@ -50,6 +50,11 @@ class SPEC(object):
             ----------
             None
         """
+        if type(measure) is str:
+            try:
+                measure = GLOB_MEASURE[measure]
+            except KeyError:
+                raise KeyError("No %r measure yet" % measure)
 
         if k < -1:
             raise Exception('k must me >= -1')
