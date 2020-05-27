@@ -17,6 +17,7 @@ class SPEC(object):
         ----------
         from sklearn.datasets import load_iris
         from ITMO_FS.filters import pearson_corr
+        from ITMO_FS.filters.multivariate import SPEC
 
         data, target = load_iris(True)
         spec = SPEC()
