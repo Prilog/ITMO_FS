@@ -11,7 +11,18 @@ class SPEC(object):
 
         Parameters
         ----------
-        None
+        measure : string or callable
+                A metric name defined in GLOB_MEASURE or a callable with
+                signature measure(selected_features, free_features, dataset, labels)
+                which should return a list of metric values for each feature in the dataset.
+        k : integer number of scoring type. Also influences ranking.
+            k = -1  - score = f'Lf. Measures the value of the normalized cut by using f as
+                        the soft cluster indicator to partition the graph G. Ranked in descending order.
+            k = 0   - using all eigenvalues except the first. Small score indicates that feature aligns closely
+                        to those nontrivial eigenvalues, hence provides good separability.
+                        Ranked in descending order.
+            k > 0   - using first k except the first. Achieves an effect of reducing noise.
+                        Ranked in ascending order.
 
         Examples
         ----------
@@ -24,11 +35,21 @@ class SPEC(object):
         print(spec.run(data, pearson_corr, -1))
     """
 
-    def __init__(self):
+    def __init__(self, measure, k):
+        if type(measure) is str:
+            try:
+                self.__measure = GLOB_MEASURE[measure]
+            except KeyError:
+                raise KeyError("No %r measure yet" % measure)
+
+        if k < -1:
+            raise Exception('k must me >= -1')
+        self.__measure = measure
+        self.__k = k
         self.__desc = None
         self.__ranked_features = None
 
-    def __score_features(self, X, measure, k):
+    def fit(self, X):
         """
             Computes score of each feature.
 
@@ -36,34 +57,15 @@ class SPEC(object):
             ----------
             X : numpy array, shape (n_samples, n_features)
                 Input samples.
-            measure : string or callable
-                A metric name defined in GLOB_MEASURE or a callable with
-                signature measure(selected_features, free_features, dataset, labels)
-                which should return a list of metric values for each feature in the dataset.
-            k : integer number of scoring type
-                k = -1  - score = f'Lf. Measures the value of the normalized cut by using f as
-                            the soft cluster indicator to partition the graph G.
-                k = 0   - using all eigenvalues except the first. Small score indicates that feature aligns closely
-                            to those nontrivial eigenvalues, hence provides good separability.
-                k > 0   - using first k except the first. Achieves an effect of reducing noise.
 
             Returns
             ----------
             None
         """
-        if type(measure) is str:
-            try:
-                measure = GLOB_MEASURE[measure]
-            except KeyError:
-                raise KeyError("No %r measure yet" % measure)
-
-        if k < -1:
-            raise Exception('k must me >= -1')
-
         n_samples, n_features = X.shape
 
         # building adjacency matrix
-        W = np.array([[measure(i, j) for i in X] for j in X])
+        W = np.array([[self.__measure(i, j) for i in X] for j in X])
         W = W - np.diag(np.diag(W))
 
         # building degree matrix
@@ -91,19 +93,19 @@ class SPEC(object):
             a = np.multiply(a, a)
             a = np.transpose(a)
 
-            if k == -1:
+            if self.__k == -1:
                 __desc[i] = np.transpose(D1).dot(L_norm).dot(D1)
-            elif k == 0:
+            elif self.__k == 0:
                 __desc[i] = (np.transpose(D1).dot(L_norm).dot(D1))/(np.transpose(D1).dot(U[0]))
             else:
-                a1 = a[n_samples-k:n_samples-1]
-                __desc[i] = np.sum(a1 * (2 - s[n_samples-k: n_samples - 1]))
+                a1 = a[n_samples-self.__k:n_samples-1]
+                __desc[i] = np.sum(a1 * (2 - s[n_samples-self.__k: n_samples - 1]))
 
-        if k > 0:
+        if self.__k > 0:
             __desc[__desc == 1000] = -1000
         self.__desc = __desc
 
-    def __rank_features(self, score, k):
+    def transform(self, score):
         """
             Ranks features depending on k.
 
@@ -111,51 +113,32 @@ class SPEC(object):
             ----------
             score : numpy array, shape (n_features)
                 Scores of features, computed by SPEC.
-            k : integer number of scoring type. Defines how features should be ranked.
-                k = -1  - ranking in descending order, the higher the score, the more relevant feature is.
-                k = 0   - ranking in descending order, the higher the score, the more relevant feature is.
-                k > 0   - ranking in ascending order, the lower the score, the more relevant feature is.
 
             Returns
             ----------
-            None
+            ranked_features: numpy array, shape (n_features)
+                Sorted list of features. Depends on k.
         """
-        if k < -1:
-            raise Exception('k must me >= -1')
         sorted_score = np.argsort(score)
-        if k > 0:
+        if self.__k > 0:
             self.__ranked_features = sorted_score
         else:
             self.__ranked_features = sorted_score[::-1]
+        return self.__ranked_features
 
-    def run(self, X, measure, k):
+    def fit_transform(self, X):
         """
-            Implements SPEC feature selection.
+            Computes scores of features and ranks them.
 
             Parameters
             ----------
             X : numpy array, shape (n_samples, n_features)
                 Input samples.
-            measure : string or callable
-                A metric name defined in GLOB_MEASURE or a callable with
-                signature measure(selected_features, free_features, dataset, labels)
-                which should return a list of metric values for each feature in the dataset.
-            k : integer number of scoring type. Also influences ranking.
-                k = -1  - score = f'Lf. Measures the value of the normalized cut by using f as
-                            the soft cluster indicator to partition the graph G. Ranked in descending order.
-                k = 0   - using all eigenvalues except the first. Small score indicates that feature aligns closely
-                            to those nontrivial eigenvalues, hence provides good separability.
-                            Ranked in descending order.
-                k > 0   - using first k except the first. Achieves an effect of reducing noise.
-                            Ranked in ascending order.
 
             Returns
             ----------
-            desc: numpy array, shape (n_features)
-                Scores of features, depending on k.
-            ranked_features: numpy array, shape (n_features_
+            ranked_features: numpy array, shape (n_features)
                 Sorted list of features. Depends on k.
         """
-        self.__score_features(X, measure, k)
-        self.__rank_features(self.__desc, k)
-        return self.__desc, self.__ranked_features
+        self.fit(X)
+        return self.transform(self.__desc)
